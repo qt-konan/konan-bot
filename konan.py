@@ -16,6 +16,10 @@ import time
 import re
 import random
 
+# ─── Imports for Dummy HTTP Server ──────────────────────────────────────────
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 # Load environment variables
 load_dotenv()
 API_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token_here")
@@ -1467,6 +1471,23 @@ async def handle_back_to_search_page(callback: CallbackQuery):
         logger.error(f"Error in back to search page: {e}")
         await callback.answer("❌ Error returning to search")
 
+ # ─── Dummy HTTP Server to Keep Render Happy ─────────────────────────────────
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"AFK bot is alive!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+def start_dummy_server():
+    port = int(os.environ.get("PORT", 10000))  # Render injects this
+    server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    print(f"Dummy server listening on port {port}")
+    server.serve_forever()
+
 # Main function
 async def main():
     """Main function to start the bot"""
@@ -1492,4 +1513,7 @@ async def main():
         await bot.session.close()
 
 if __name__ == "__main__":
+    # Start dummy HTTP server (needed for Render health check)
+    threading.Thread(target=start_dummy_server, daemon=True).start()
+    
     asyncio.run(main())
