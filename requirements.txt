@@ -1,0 +1,4 @@
+aiohttp
+aiogram>=3.0.0b7
+python-dotenv
+beautifulsoup4
