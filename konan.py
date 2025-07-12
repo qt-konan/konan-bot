@@ -796,7 +796,7 @@ async def cmd_start(message: types.Message):
     try:
         user_name = message.from_user.first_name or "User"
         user_mention = f'<a href="tg://user?id={message.from_user.id}">{user_name}</a>'
-        
+
         welcome_text = (
             f"🌸 <b>Hey {user_mention}! Welcome to Konan!</b>\n\n"
             f"<i>Your personal guide to endless manga adventures</i> ✨\n\n"
@@ -807,20 +807,54 @@ async def cmd_start(message: types.Message):
             "└─ <code>/help</code> for the complete guide\n\n"
             "🌟 <i>Ready to explore amazing stories?</i>"
         )
-        
-        # Create inline keyboard with welcome buttons
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
         welcome_buttons = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Updates", url="https://t.me/WorkGlows"),
-                InlineKeyboardButton(text="Support", url="https://t.me/TheCryptoElders")
+                InlineKeyboardButton(text="Support", url="https://t.me/SoulMeetsHQ")
             ],
             [
-                InlineKeyboardButton(text="Add Me To Your Group", url=f"https://t.me/{(await bot.get_me()).username}?startgroup=true")
+                InlineKeyboardButton(
+                    text="Add Me To Your Group",
+                    url=f"https://t.me/{(await bot.get_me()).username}?startgroup=true"
+                )
             ]
         ])
-        
-        await send_message(message, welcome_text, reply_markup=welcome_buttons)
+
+        # List of images
+        image_urls = [
+            "https://i.postimg.cc/x841BwFW/New-Project-235-FFA9646.png",
+            "https://i.postimg.cc/5NC7HwSV/New-Project-235-A06-DD7-A.png",
+            "https://i.postimg.cc/HnPqpdm9/New-Project-235-9-E45-B87.png",
+            "https://i.postimg.cc/1tSPTmRg/New-Project-235-AB394-C0.png",
+            "https://i.postimg.cc/8ct1M2S7/New-Project-235-9-CAE309.png",
+            "https://i.postimg.cc/TYtwDDdt/New-Project-235-2-F658-B0.png",
+            "https://i.postimg.cc/xdwqdVfY/New-Project-235-68-BAF06.png",
+            "https://i.postimg.cc/hPczxn9t/New-Project-235-9-E9-A004.png",
+            "https://i.postimg.cc/jjFPQ1Rk/New-Project-235-A1-E7-CC1.png",
+            "https://i.postimg.cc/TPqJV0pz/New-Project-235-CA65155.png",
+            "https://i.postimg.cc/wBh0WHbb/New-Project-235-89799-CD.png",
+            "https://i.postimg.cc/FKdQ1fzk/New-Project-235-C377613.png",
+            "https://i.postimg.cc/rpKqWnnm/New-Project-235-CFD2548.png",
+            "https://i.postimg.cc/g0kn7HMF/New-Project-235-C4-A32-AC.png",
+            "https://i.postimg.cc/XY6jRkY1/New-Project-235-28-DCBC9.png",
+            "https://i.postimg.cc/SN32J9Nc/New-Project-235-99-D1478.png",
+            "https://i.postimg.cc/8C86n62T/New-Project-235-F1556-B9.png",
+            "https://i.postimg.cc/RCGwVqHT/New-Project-235-5-BBB339.png",
+            "https://i.postimg.cc/pTfYBZyN/New-Project-235-17-D796-A.png",
+            "https://i.postimg.cc/zGgdgJJc/New-Project-235-165-FE5-A.png"
+        ]
+
+        selected_image = random.choice(image_urls)
+
+        # Send the welcome image with caption
+        await message.answer_photo(
+            photo=selected_image,
+            caption=welcome_text,
+            parse_mode="HTML",
+            reply_markup=welcome_buttons
+        )
+
     except Exception as e:
         logger.error(f"Error in start command: {e}")
         await send_message(message, "❌ An error occurred. Please try again.")
