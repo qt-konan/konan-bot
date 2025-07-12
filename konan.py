@@ -800,11 +800,11 @@ async def cmd_start(message: types.Message):
         welcome_text = (
             f"🌸 <b>Hey {user_mention}! Welcome to Konan!</b>\n\n"
             f"<i>Your personal guide to endless manga adventures</i> ✨\n\n"
-            "🎭 Whether you're seeking romance, action, or drama - I'm here to help you discover incredible stories that speak to your soul.\n\n"
+            "<blockquote>🎭 Whether you're seeking romance, action, or drama - I'm here to help you discover incredible stories that speak to your soul.\n\n"
             "💝 <b>Start your journey:</b>\n"
             "├─ <code>/random</code> for surprise discoveries\n"
             "├─ <code>/search</code> to find specific content\n"
-            "└─ <code>/help</code> for the complete guide\n\n"
+            "└─ <code>/help</code> for the complete guide</blockquote>\n\n"
             "🌟 <i>Ready to explore amazing stories?</i>"
         )
 
