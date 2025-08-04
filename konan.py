@@ -903,7 +903,6 @@ async def cmd_start(message: types.Message):
 
     except Exception as e:
         logger.error(f"Error in start command: {e}")
-        await send_message(message, "❌ An error occurred. Please try again.")
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
@@ -920,7 +919,6 @@ async def cmd_help(message: types.Message):
         await send_message(message, help_text, reply_markup=help_keyboard)
     except Exception as e:
         logger.error(f"Error in help command: {e}")
-        await send_message(message, "❌ An error occurred. Please try again.")
 
 @dp.callback_query(F.data == "help_expand")
 async def help_expand(callback: CallbackQuery):
@@ -1001,6 +999,30 @@ async def cmd_id(message: types.Message, command: CommandObject):
     except Exception as e:
         logger.error(f"Error in id command: {e}")
         await send_message(message, "❌ An error occurred. Please try again.")
+
+@dp.message(Command("ping"))
+async def cmd_ping(message: types.Message):
+    try:
+        import time
+        start_time = time.time()
+        
+        # Send initial ping message
+        if message.chat.type == "private":
+            ping_msg = await message.answer("🛰️ Pinging...")
+        else:
+            ping_msg = await message.reply("🛰️ Pinging...")
+        
+        # Calculate ping time
+        end_time = time.time()
+        ping_time = (end_time - start_time) * 1000  # Convert to milliseconds
+        
+        # Edit message with pong and hyperlink
+        pong_text = f'🏓 <a href="https://t.me/SoulMeetsHQ">Pong!</a> {ping_time:.2f}ms'
+        
+        await ping_msg.edit_text(pong_text, disable_web_page_preview=True)
+        
+    except Exception as e:
+        logger.error(f"Error in ping command: {e}")
 
 @dp.message(Command("search"))
 async def cmd_search(message: types.Message, command: CommandObject):
@@ -1494,7 +1516,7 @@ async def main():
         
         from aiogram.types import BotCommand
         commands = [
-            BotCommand(command="start", description="🌸 Welcome Home"),
+            BotCommand(command="start", description="🪷 Welcome Home"),
             BotCommand(command="help", description="📚 Complete Guide"),
             BotCommand(command="random", description="🎲 Random Discovery"),
             BotCommand(command="search", description="🔍 Advanced Search"),
