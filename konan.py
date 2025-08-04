@@ -15,16 +15,190 @@ from typing import Dict, List, Optional
 import time
 import re
 import random
-
-# ─── Imports for Dummy HTTP Server ──────────────────────────────────────────
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Load environment variables
+# Config and constants
 load_dotenv()
 API_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token_here")
+NHENTAI_RANDOM = "https://nhentai.net/random"
+NHENTAI_API = "https://nhentai.net/api/gallery/"
+NHENTAI_SEARCH = "https://nhentai.net/search/?q="
+RESULTS_PER_PAGE = 5
+MAX_RETRIES = 3
+RATE_LIMIT_DELAY = 2.0
+REQUEST_TIMEOUT = 15
 
-# Logging configuration
+# Message dictionaries
+MESSAGES = {
+    'welcome': f"""🌸 <b>Hey {{user_mention}}! Welcome to Konan!</b>
+
+<i>Your personal guide to endless manga adventures</i> ✨
+
+<blockquote>🎭 Whether you're seeking romance, action, or drama - I'm here to help you discover incredible stories that speak to your soul.
+
+💝 <b>Start your journey:</b>
+├─ <code>/random</code> for surprise discoveries
+├─ <code>/search</code> to find specific content
+└─ <code>/help</code> for the complete guide</blockquote>
+
+🌟 <i>Ready to explore amazing stories?</i>""",
+
+    'help_short': f"""📚 <b>Complete Guide</b>
+<i>Hello {{user_mention}}! Here's everything:</i>
+
+🎯 <b>COMMANDS</b>
+
+🎲 <b><code>/random</code></b>
+├─ Get instant random content
+└─ Perfect for discovery
+
+🔢 <b><code>/id &lt;number&gt;</code></b>
+├─ Direct access by ID
+└─ Example: <code>/id 123456</code>
+
+🔍 <b><code>/search &lt;keywords&gt;</code></b>
+├─ Find specific content
+├─ <code>/search vanilla</code>
+├─ <code>/search english</code>
+└─ <code>/search artist:name</code>
+
+✨ <b>Ready to explore?</b>
+<i>Try any command above!</i>""",
+
+    'help_full': f"""📚 <b>Complete Guide</b>
+<i>Hello {{user_mention}}! Here's everything:</i>
+
+🎯 <b>COMMANDS</b>
+
+🎲 <b><code>/random</code></b>
+├─ Get instant random content
+└─ Perfect for discovery
+
+🔢 <b><code>/id &lt;number&gt;</code></b>
+├─ Direct access by ID
+└─ Example: <code>/id 123456</code>
+
+🔍 <b><code>/search &lt;keywords&gt;</code></b>
+├─ Find specific content
+├─ <code>/search vanilla</code>
+├─ <code>/search english</code>
+└─ <code>/search artist:name</code>
+
+🎮 <b>NAVIGATION</b>
+
+📖 <b>Reading Mode:</b>
+├─ Click <code>📖</code> to start
+├─ ⬅️➡️ Previous/Next page
+├─ ⬅️10 / 10➡️ Jump 10 pages
+└─ ⏪⏩ First/Last page
+
+📚 <b>Chapter Navigation:</b>
+├─ Same controls for chapters
+└─ Seamless reading
+
+🔍 <b>Search Results:</b>
+├─ Browse unlimited results
+└─ Intuitive button controls
+
+💡 <b>PRO TIPS</b>
+
+🎯 <b>Search Better:</b>
+├─ Use specific tags
+├─ Combine keywords
+├─ Try: english, japanese
+└─ Try: vanilla, romance
+
+🚀 <b>Navigate Faster:</b>
+├─ Bookmark interesting IDs
+├─ Use 10-page jumps
+└─ Touch-friendly buttons
+
+✨ <b>Ready to explore?</b>
+<i>Try any command above!</i>""",
+
+    'search_prompt': f"""🔍 <b>What would you like to find?</b>
+
+💡 <i>Just tell me what you're looking for:</i>
+├─ <code>/search vanilla</code>
+├─ <code>/search romance</code>
+└─ <code>/search english</code>""",
+
+    'id_prompt': f"""🔢 <b>Need an ID to get started!</b>
+
+💡 <i>Just add the number after the command:</i>
+<code>/id 123456</code>""",
+
+    'random_search': "🎲 Finding a random doujin...",
+    'id_fetch': "🔍 Fetching doujin {doujin_id}...",
+    'search_working': "🔍 Searching for: <b>{query}</b>...",
+    'doujin_missing': f"""🌙 <b>Oops! That story seems to be missing...</b>
+
+<i>ID {{doujin_id}} isn't available right now. Try another adventure!</i>""",
+    'random_retry': f"""🎲 <b>Let's try another roll!</b>
+
+<i>That one didn't work out, but there are thousands more waiting to be discovered!</i>""",
+    'magic_failed': f"""🌟 <b>The magic didn't work this time...</b>
+
+<i>Let's give it another try! Sometimes the best discoveries take a moment to find.</i>""",
+    'no_results': "❌ No results found for: <b>{query}</b>",
+    'search_tip': f"""💡 To search, use longer terms like:
+<code>hinata hyuga</code>
+<code>english vanilla</code>
+Or use /help for all commands."""
+}
+
+# Image lists
+WELCOME_IMAGES = [
+    "https://files.catbox.moe/kas0r4.png",
+    "https://files.catbox.moe/ml47fn.png",
+    "https://files.catbox.moe/0492u7.png",
+    "https://files.catbox.moe/411ks8.png",
+    "https://files.catbox.moe/oihku5.png",
+    "https://files.catbox.moe/6w3pjs.png",
+    "https://files.catbox.moe/zab0e6.png",
+    "https://files.catbox.moe/5badpd.png",
+    "https://files.catbox.moe/dzg683.png",
+    "https://files.catbox.moe/2am6s9.png",
+    "https://files.catbox.moe/a3hddu.png",
+    "https://files.catbox.moe/268cjb.png",
+    "https://files.catbox.moe/jbvcq4.png",
+    "https://files.catbox.moe/3aahua.png",
+    "https://files.catbox.moe/qb4mx1.png",
+    "https://files.catbox.moe/besatg.png",
+    "https://files.catbox.moe/wrzmuw.png",
+    "https://files.catbox.moe/rr7lej.png",
+    "https://files.catbox.moe/7qf6mz.png",
+    "https://files.catbox.moe/wj1id4.png",
+    "https://files.catbox.moe/cx2lvu.png",
+    "https://files.catbox.moe/0q2yaa.png",
+    "https://files.catbox.moe/7wjc94.png",
+    "https://files.catbox.moe/9tw25m.png",
+    "https://files.catbox.moe/5uokng.png",
+    "https://files.catbox.moe/7ye2sk.png",
+    "https://files.catbox.moe/w9y650.png",
+    "https://files.catbox.moe/4gcmuh.png",
+    "https://files.catbox.moe/j9c5dy.png",
+    "https://files.catbox.moe/zzgdib.png",
+    "https://files.catbox.moe/f98a9f.png",
+    "https://files.catbox.moe/p61aq2.png",
+    "https://files.catbox.moe/9qkaov.png",
+    "https://files.catbox.moe/8tvtjm.png",
+    "https://files.catbox.moe/hd9105.png",
+    "https://files.catbox.moe/jycqms.png",
+    "https://files.catbox.moe/gtqmw9.png",
+    "https://files.catbox.moe/v79vcg.png",
+    "https://files.catbox.moe/kl5xbq.png",
+    "https://files.catbox.moe/6vr4vw.png"
+]
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+]
+
+# Bot setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -35,22 +209,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot initialization
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
-# Constants
-NHENTAI_RANDOM = "https://nhentai.net/random"
-NHENTAI_API = "https://nhentai.net/api/gallery/"
-NHENTAI_SEARCH = "https://nhentai.net/search/?q="
-RESULTS_PER_PAGE = 5
-MAX_RETRIES = 3
-RATE_LIMIT_DELAY = 2.0
-REQUEST_TIMEOUT = 15
-
-# Session storage for user states
+# Session storage
 user_sessions: Dict[int, Dict] = {}
 
+# Rate limiter
 class RateLimiter:
     def __init__(self, delay: float = RATE_LIMIT_DELAY):
         self.delay = delay
@@ -68,17 +233,11 @@ class RateLimiter:
 
 rate_limiter = RateLimiter()
 
+# Helper functions
 def get_user_agent():
-    """Get a random user agent to avoid detection"""
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    ]
-    return random.choice(user_agents)
+    return random.choice(USER_AGENTS)
 
 async def create_session() -> aiohttp.ClientSession:
-    """Create an aiohttp session with proper configuration"""
     headers = {
         'User-Agent': get_user_agent(),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -98,7 +257,6 @@ async def create_session() -> aiohttp.ClientSession:
     )
 
 async def make_request_with_retry(url: str, retries: int = MAX_RETRIES) -> Optional[aiohttp.ClientResponse]:
-    """Make HTTP request with retry logic and proper error handling"""
     for attempt in range(retries):
         try:
             async with await create_session() as session:
@@ -119,7 +277,6 @@ async def make_request_with_retry(url: str, retries: int = MAX_RETRIES) -> Optio
     return None
 
 async def get_page_content(url: str) -> Optional[str]:
-    """Get page content with proper error handling"""
     try:
         async with await create_session() as session:
             async with session.get(url) as resp:
@@ -132,16 +289,13 @@ async def get_page_content(url: str) -> Optional[str]:
     return None
 
 async def get_random_doujin_id() -> Optional[str]:
-    """Get random doujin ID from nhentai with improved error handling"""
     try:
         async with await create_session() as session:
             async with session.get(NHENTAI_RANDOM, allow_redirects=False) as resp:
                 logger.info(f"Random request status: {resp.status}")
-                # Handle both 301 and 302 redirects
                 if resp.status in [301, 302]:
                     location = resp.headers.get("Location", "")
                     logger.info(f"Redirect location: {location}")
-                    # Extract ID from URL like /g/123456/
                     match = re.search(r'/g/(\d+)/?', location)
                     if match:
                         doujin_id = match.group(1)
@@ -150,9 +304,7 @@ async def get_random_doujin_id() -> Optional[str]:
                     else:
                         logger.warning(f"Could not extract ID from location: {location}")
                 elif resp.status == 200:
-                    # Sometimes nhentai returns 200 with direct content
                     content = await resp.text()
-                    # Try to extract ID from page content
                     match = re.search(r'/g/(\d+)/?', content)
                     if match:
                         doujin_id = match.group(1)
@@ -160,7 +312,6 @@ async def get_random_doujin_id() -> Optional[str]:
                         return doujin_id
                 else:
                     logger.warning(f"Unexpected status code for random: {resp.status}")
-                    # Try to get response text for debugging
                     try:
                         content = await resp.text()
                         logger.warning(f"Response content: {content[:200]}")
@@ -169,10 +320,9 @@ async def get_random_doujin_id() -> Optional[str]:
     except Exception as e:
         logger.error(f"Error getting random doujin: {e}")
     
-    # Fallback: try getting a random ID from a known range
+    # Fallback random ID
     logger.info("Trying fallback method for random doujin")
     try:
-        # Use a range of known working IDs (this is a fallback)
         random_id = str(random.randint(100000, 400000))
         logger.info(f"Generated fallback random ID: {random_id}")
         return random_id
@@ -182,7 +332,6 @@ async def get_random_doujin_id() -> Optional[str]:
     return None
 
 async def get_doujin_by_id(doujin_id: str) -> Optional[dict]:
-    """Get doujin data by ID from nhentai API with improved error handling"""
     for attempt in range(MAX_RETRIES):
         try:
             api_url = f"{NHENTAI_API}{doujin_id}"
@@ -197,16 +346,14 @@ async def get_doujin_by_id(doujin_id: str) -> Optional[dict]:
                         return data
                     elif resp.status == 404:
                         logger.info(f"Doujin {doujin_id} not found")
-                        return None  # Don't retry for 404
+                        return None
                     elif resp.status == 429:
-                        # Rate limited
                         wait_time = 2 ** attempt
                         logger.warning(f"Rate limited, waiting {wait_time}s before retry")
                         await asyncio.sleep(wait_time)
                         continue
                     else:
                         logger.warning(f"API request failed with status {resp.status}")
-                        # Try to get response text for debugging
                         try:
                             error_text = await resp.text()
                             logger.warning(f"Error response: {error_text[:200]}")
@@ -232,7 +379,6 @@ async def get_doujin_by_id(doujin_id: str) -> Optional[dict]:
     return None
 
 async def search_nhentai(query: str, max_pages: int = 5) -> List[str]:
-    """Search nhentai and return list of doujin IDs with improved parsing and multi-page support"""
     all_doujin_ids = []
     
     try:
@@ -247,12 +393,10 @@ async def search_nhentai(query: str, max_pages: int = 5) -> List[str]:
             
             soup = BeautifulSoup(content, "html.parser")
             
-            # Check if this page has results
             if "No results found" in content or not soup.select("a[href*='/g/']"):
                 logger.info(f"No more results found on page {page}")
                 break
             
-            # Try multiple selectors to find gallery links
             selectors = [
                 "a.gallery",
                 "a[href*='/g/']",
@@ -268,7 +412,6 @@ async def search_nhentai(query: str, max_pages: int = 5) -> List[str]:
                 for link in links:
                     href_attr = link.get("href")
                     if href_attr:
-                        # Extract ID from href like /g/123456/ or /g/123456
                         match = re.search(r'/g/(\d+)/?', str(href_attr))
                         if match:
                             doujin_id = match.group(1)
@@ -285,21 +428,17 @@ async def search_nhentai(query: str, max_pages: int = 5) -> List[str]:
             all_doujin_ids.extend(page_doujin_ids)
             logger.info(f"Page {page}: Added {len(page_doujin_ids)} new doujin IDs")
             
-            # Add a small delay between pages to be respectful
             if page < max_pages:
                 await asyncio.sleep(0.5)
         
         logger.info(f"Found {len(all_doujin_ids)} total doujin IDs for query: {query}")
         
-        # Sort doujin IDs in ascending order to show earliest chapters first
         doujin_ids_sorted = sorted(all_doujin_ids, key=lambda x: int(x))
         logger.info(f"Sorted {len(doujin_ids_sorted)} doujin IDs from earliest to latest")
         logger.info(f"First 10 doujin IDs: {doujin_ids_sorted[:10]}")
         
-        # Return all results sorted chronologically - let user choose what they want to read
-        # The "chapter progression" issue is actually normal for serialized manga
         logger.info(f"Returning {len(doujin_ids_sorted)} chronologically sorted results")
-        return doujin_ids_sorted  # No limit - return all results
+        return doujin_ids_sorted
         
     except Exception as e:
         logger.error(f"Error searching nhentai: {e}")
@@ -310,39 +449,30 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                         search_query: str = "", page_mode: bool = False,
                         manga_current_page: int = 1, manga_total_pages: int = 1,
                         search_results: Optional[List[str]] = None, search_index: int = -1) -> InlineKeyboardMarkup:
-    """Create inline keyboard markup for doujin"""
     buttons = []
     
     if page_mode:
-        # Page navigation mode - show manga pages
-        
-        # First row: First page, -10 pages, current page, +10 pages, last page
+        # First row: Jump navigation
         first_row = []
         
-        # First page button
         if manga_current_page > 1:
             first_row.append(InlineKeyboardButton(
                 text="⏪",
                 callback_data=f"page:first:{doujin_id}:{manga_current_page}"
             ))
         
-        # Previous 10 pages button
         if manga_current_page > 10:
             first_row.append(InlineKeyboardButton(
                 text="⬅️10",
                 callback_data=f"page:prev10:{doujin_id}:{manga_current_page}"
             ))
         
-        # Page indicator (removed per user request)
-        
-        # Next 10 pages button
         if manga_current_page + 10 <= manga_total_pages:
             first_row.append(InlineKeyboardButton(
                 text="10➡️",
                 callback_data=f"page:next10:{doujin_id}:{manga_current_page}"
             ))
         
-        # Last page button
         if manga_current_page < manga_total_pages:
             first_row.append(InlineKeyboardButton(
                 text="⏩",
@@ -352,17 +482,15 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
         if first_row:
             buttons.append(first_row)
             
-        # Second row: Previous page, Next page
+        # Second row: Single page navigation
         second_row = []
         
-        # Previous page button
         if manga_current_page > 1:
             second_row.append(InlineKeyboardButton(
                 text="⬅️",
                 callback_data=f"page:prev:{doujin_id}:{manga_current_page}"
             ))
         
-        # Next page button
         if manga_current_page < manga_total_pages:
             second_row.append(InlineKeyboardButton(
                 text="➡️",
@@ -371,15 +499,11 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
         
         if second_row:
             buttons.append(second_row)
-            
 
-        
-        # Fourth row: Chapter navigation (if we have search results)
+        # Chapter navigation if available
         if search_results and search_index >= 0:
-            # First row of chapter navigation
             chapter_row_1 = []
             
-            # First chapter button
             if search_index > 0:
                 first_chapter_id = search_results[0]
                 chapter_row_1.append(InlineKeyboardButton(
@@ -387,7 +511,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     callback_data=f"next_chapter:{first_chapter_id}:0"
                 ))
             
-            # Previous 10 chapters button
             if search_index >= 10:
                 prev_10_index = max(0, search_index - 10)
                 prev_10_chapter_id = search_results[prev_10_index]
@@ -396,7 +519,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     callback_data=f"next_chapter:{prev_10_chapter_id}:{prev_10_index}"
                 ))
             
-            # Next 10 chapters button
             if search_index + 10 < len(search_results):
                 next_10_index = min(len(search_results) - 1, search_index + 10)
                 next_10_chapter_id = search_results[next_10_index]
@@ -405,7 +527,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     callback_data=f"next_chapter:{next_10_chapter_id}:{next_10_index}"
                 ))
             
-            # Last chapter button
             if search_index < len(search_results) - 1:
                 last_chapter_id = search_results[-1]
                 chapter_row_1.append(InlineKeyboardButton(
@@ -416,10 +537,8 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
             if chapter_row_1:
                 buttons.append(chapter_row_1)
                 
-            # Second row of chapter navigation (single step)
             chapter_row_2 = []
             
-            # Previous chapter button
             if search_index > 0:
                 prev_chapter_id = search_results[search_index - 1]
                 chapter_row_2.append(InlineKeyboardButton(
@@ -427,7 +546,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     callback_data=f"next_chapter:{prev_chapter_id}:{search_index - 1}"
                 ))
             
-            # Next chapter button
             if search_index < len(search_results) - 1:
                 next_chapter_id = search_results[search_index + 1]
                 chapter_row_2.append(InlineKeyboardButton(
@@ -438,9 +556,7 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
             if chapter_row_2:
                 buttons.append(chapter_row_2)
                 
-            # Back to Search button in page mode (shorter name) - only if from search
-            if search_results:  # Only show if we have search results context
-                # We'll use a generic callback and get the search query from session in handler
+            if search_results:
                 buttons.append([
                     InlineKeyboardButton(
                         text="🔍",
@@ -448,44 +564,36 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     )
                 ])
     else:
-        # Info mode - show doujin info
-        # Read pages button
+        # Info mode
         buttons.append([
             InlineKeyboardButton(
                 text="📖",
                 callback_data=f"read:{doujin_id}:1"
             )
         ])
-        
 
-        
-        # Navigation buttons for search results
+        # Navigation buttons for search
         if show_navigation and total_pages > 1:
-            # First row: First result, -10 results, current position, +10 results, last result
             first_row = []
             
-            # First result button
             if current_page > 0:
                 first_row.append(InlineKeyboardButton(
                     text="⏪",
                     callback_data=f"nav:first:{current_page}:{search_query}"
                 ))
             
-            # Previous 10 results button
             if current_page >= 10:
                 first_row.append(InlineKeyboardButton(
                     text="⬅️10",
                     callback_data=f"nav:prev10:{current_page}:{search_query}"
                 ))
             
-            # Next 10 results button
             if current_page + 10 < total_pages:
                 first_row.append(InlineKeyboardButton(
                     text="10➡️",
                     callback_data=f"nav:next10:{current_page}:{search_query}"
                 ))
             
-            # Last result button
             if current_page < total_pages - 1:
                 first_row.append(InlineKeyboardButton(
                     text="⏩",
@@ -495,7 +603,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
             if first_row:
                 buttons.append(first_row)
             
-            # Second row: Previous result, page indicator, next result
             second_row = []
             
             if current_page > 0:
@@ -504,7 +611,6 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
                     callback_data=f"nav:prev:{current_page}:{search_query}"
                 ))
             
-            # Page indicator
             second_row.append(InlineKeyboardButton(
                 text=f"{current_page + 1}/{total_pages}",
                 callback_data="nav:page_info"
@@ -522,19 +628,16 @@ def create_doujin_markup(doujin_id: str, show_navigation: bool = False,
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def format_doujin_info(data: dict) -> str:
-    """Format doujin information for display with better error handling"""
     if not data:
         return "❌ Error: Invalid doujin data"
     
     try:
-        # Get title with fallback options
         title_obj = data.get("title", {})
         title = (title_obj.get("english") or 
                 title_obj.get("japanese") or 
                 title_obj.get("pretty") or 
                 "No Title Available")
         
-        # Extract tags by type
         all_tags = data.get("tags", [])
         tags = [tag.get("name", "") for tag in all_tags if tag.get("type") == "tag"]
         artists = [tag.get("name", "") for tag in all_tags if tag.get("type") == "artist"]
@@ -544,7 +647,6 @@ def format_doujin_info(data: dict) -> str:
         pages = data.get("num_pages", 0)
         doujin_id = data.get("id", "Unknown")
         
-        # Format tags with limits
         def format_tag_list(tag_list, limit=6):
             if not tag_list:
                 return "None"
@@ -554,11 +656,9 @@ def format_doujin_info(data: dict) -> str:
                 result += f" (+{len(tag_list) - limit} more)"
             return result
         
-        # Truncate title if too long
         if len(title) > 80:
             title = title[:77] + "..."
         
-        # Build formatted text
         text_parts = [
             f"<b>{title}</b>",
             "",
@@ -585,28 +685,23 @@ def format_doujin_info(data: dict) -> str:
         return "❌ Error formatting doujin information"
 
 def get_cover_image_url(data: dict) -> Optional[str]:
-    """Get cover image URL with multiple fallback strategies"""
     try:
         media_id = data.get("media_id")
         if not media_id:
             return None
         
-        # Try to get cover info
         images = data.get("images", {})
         cover_info = images.get("cover", {})
         
-        # Determine extension
         ext_map = {"j": "jpg", "p": "png", "g": "gif"}
         ext = ext_map.get(cover_info.get("t"), "jpg")
         
-        # Try different CDN URLs in order of reliability
         possible_urls = [
             f"https://t.nhentai.net/galleries/{media_id}/cover.{ext}",
             f"https://t.nhentai.net/galleries/{media_id}/thumb.{ext}",
             f"https://i.nhentai.net/galleries/{media_id}/cover.{ext}"
         ]
         
-        # Return the first URL (simple fallback strategy)
         return possible_urls[0]
         
     except Exception as e:
@@ -614,26 +709,22 @@ def get_cover_image_url(data: dict) -> Optional[str]:
         return None
 
 def get_page_image_url(data: dict, page_num: int) -> Optional[str]:
-    """Get page image URL for a specific page"""
     try:
         media_id = data.get("media_id")
         if not media_id:
             return None
         
-        # Get page info
         images = data.get("images", {})
         pages = images.get("pages", [])
         
         if page_num < 1 or page_num > len(pages):
             return None
             
-        page_info = pages[page_num - 1]  # Pages are 0-indexed in API
+        page_info = pages[page_num - 1]
         
-        # Determine extension
         ext_map = {"j": "jpg", "p": "png", "g": "gif"}
         ext = ext_map.get(page_info.get("t"), "jpg")
         
-        # Try different CDN URLs
         possible_urls = [
             f"https://i.nhentai.net/galleries/{media_id}/{page_num}.{ext}",
             f"https://t.nhentai.net/galleries/{media_id}/{page_num}.{ext}",
@@ -641,7 +732,7 @@ def get_page_image_url(data: dict, page_num: int) -> Optional[str]:
         ]
         
         logger.info(f"Generated page URL for doujin {data.get('id', 'unknown')}, media_id {media_id}, page {page_num}: {possible_urls[0]}")
-        return possible_urls[0]  # Return the primary URL
+        return possible_urls[0]
         
     except Exception as e:
         logger.error(f"Error getting page image URL: {e}")
@@ -650,7 +741,6 @@ def get_page_image_url(data: dict, page_num: int) -> Optional[str]:
 async def edit_doujin_info(message, doujin_id: str, show_navigation: bool = False,
                           current_page: int = 0, total_pages: int = 1, 
                           search_query: str = "") -> bool:
-    """Edit existing message with doujin information"""
     try:
         data = await get_doujin_by_id(doujin_id)
         if not data:
@@ -659,7 +749,6 @@ async def edit_doujin_info(message, doujin_id: str, show_navigation: bool = Fals
         caption = format_doujin_info(data)
         markup = create_doujin_markup(doujin_id, show_navigation, current_page, total_pages, search_query)
         
-        # Try to edit with cover image
         cover_url = get_cover_image_url(data)
         if cover_url:
             try:
@@ -670,9 +759,8 @@ async def edit_doujin_info(message, doujin_id: str, show_navigation: bool = Fals
                 return True
             except TelegramBadRequest as e:
                 if "message is not modified" in str(e).lower():
-                    return True  # Message is already showing the same content
+                    return True
                 logger.warning(f"Failed to edit with image: {e}")
-                # Try to edit text only
                 try:
                     await message.edit_text(
                         text=f"🖼 <i>Image unavailable</i>\n\n{caption}",
@@ -682,7 +770,6 @@ async def edit_doujin_info(message, doujin_id: str, show_navigation: bool = Fals
                 except TelegramBadRequest:
                     return False
         else:
-            # Edit text only
             try:
                 await message.edit_text(
                     text=f"🖼 <i>Image unavailable</i>\n\n{caption}",
@@ -698,18 +785,16 @@ async def edit_doujin_info(message, doujin_id: str, show_navigation: bool = Fals
 async def send_doujin_info(chat_id: int, doujin_id: str, show_navigation: bool = False,
                           current_page: int = 0, total_pages: int = 1, 
                           search_query: str = "", reply_to_message: types.Message = None) -> bool:
-    """Send doujin information with cover image and improved error handling"""
     try:
         logger.info(f"Sending doujin info for ID: {doujin_id}")
         data = await get_doujin_by_id(doujin_id)
         if not data:
-            await bot.send_message(chat_id, f"🌙 <b>Oops! That story seems to be missing...</b>\n\n<i>ID {doujin_id} isn't available right now. Try another adventure!</i>")
+            await bot.send_message(chat_id, MESSAGES['doujin_missing'].format(doujin_id=doujin_id))
             return False
         
         caption = format_doujin_info(data)
         markup = create_doujin_markup(doujin_id, show_navigation, current_page, total_pages, search_query)
         
-        # Try to send with cover image
         cover_url = get_cover_image_url(data)
         if cover_url:
             try:
@@ -730,7 +815,6 @@ async def send_doujin_info(chat_id: int, doujin_id: str, show_navigation: bool =
                 return True
             except (TelegramAPIError, TelegramBadRequest) as e:
                 logger.warning(f"Failed to send with image, sending text only: {e}")
-                # Fallback to text message
                 if reply_to_message and reply_to_message.chat.type != "private":
                     await reply_to_message.reply(
                         text=f"🖼 <i>Image unavailable</i>\n\n{caption}",
@@ -744,7 +828,6 @@ async def send_doujin_info(chat_id: int, doujin_id: str, show_navigation: bool =
                     )
                 return True
         else:
-            # No image available, send text only
             if reply_to_message and reply_to_message.chat.type != "private":
                 await reply_to_message.reply(
                     text=caption,
@@ -772,7 +855,6 @@ async def send_doujin_info(chat_id: int, doujin_id: str, show_navigation: bool =
         return False
 
 def get_user_session(user_id: int) -> dict:
-    """Get or create user session"""
     if user_id not in user_sessions:
         user_sessions[user_id] = {
             'current_search': '',
@@ -783,7 +865,6 @@ def get_user_session(user_id: int) -> dict:
     return user_sessions[user_id]
 
 async def send_message(message: types.Message, text: str, **kwargs):
-    """Send message with reply in groups, regular message in private chats"""
     if message.chat.type == "private":
         return await message.answer(text, **kwargs)
     else:
@@ -792,21 +873,11 @@ async def send_message(message: types.Message, text: str, **kwargs):
 # Command handlers
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    """Handle /start command"""
     try:
         user_name = message.from_user.first_name or "User"
         user_mention = f'<a href="tg://user?id={message.from_user.id}">{user_name}</a>'
 
-        welcome_text = (
-            f"🌸 <b>Hey {user_mention}! Welcome to Konan!</b>\n\n"
-            f"<i>Your personal guide to endless manga adventures</i> ✨\n\n"
-            "<blockquote>🎭 Whether you're seeking romance, action, or drama - I'm here to help you discover incredible stories that speak to your soul.\n\n"
-            "💝 <b>Start your journey:</b>\n"
-            "├─ <code>/random</code> for surprise discoveries\n"
-            "├─ <code>/search</code> to find specific content\n"
-            "└─ <code>/help</code> for the complete guide</blockquote>\n\n"
-            "🌟 <i>Ready to explore amazing stories?</i>"
-        )
+        welcome_text = MESSAGES['welcome'].format(user_mention=user_mention)
 
         welcome_buttons = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -821,53 +892,8 @@ async def cmd_start(message: types.Message):
             ]
         ])
 
-        # List of images
-        image_urls = [
- 		   "https://files.catbox.moe/kas0r4.png",
- 		   "https://files.catbox.moe/ml47fn.png",
- 		   "https://files.catbox.moe/0492u7.png",
-		    "https://files.catbox.moe/411ks8.png",
-		    "https://files.catbox.moe/oihku5.png",
- 		   "https://files.catbox.moe/6w3pjs.png",
-		    "https://files.catbox.moe/zab0e6.png",
- 		   "https://files.catbox.moe/5badpd.png",
- 		   "https://files.catbox.moe/dzg683.png",
- 		   "https://files.catbox.moe/2am6s9.png",
-		    "https://files.catbox.moe/a3hddu.png",
-		    "https://files.catbox.moe/268cjb.png",
-		    "https://files.catbox.moe/jbvcq4.png",
- 		   "https://files.catbox.moe/3aahua.png",
-  		  "https://files.catbox.moe/qb4mx1.png",
-		    "https://files.catbox.moe/besatg.png",
-		    "https://files.catbox.moe/wrzmuw.png",
-  		  "https://files.catbox.moe/rr7lej.png",
-		    "https://files.catbox.moe/7qf6mz.png",
- 		   "https://files.catbox.moe/wj1id4.png",
- 		   "https://files.catbox.moe/cx2lvu.png",
-		    "https://files.catbox.moe/0q2yaa.png",
-		    "https://files.catbox.moe/7wjc94.png",
-		    "https://files.catbox.moe/9tw25m.png",
- 		   "https://files.catbox.moe/5uokng.png",
-		    "https://files.catbox.moe/7ye2sk.png",
-		    "https://files.catbox.moe/w9y650.png",
- 		   "https://files.catbox.moe/4gcmuh.png",
-		    "https://files.catbox.moe/j9c5dy.png",
- 		   "https://files.catbox.moe/zzgdib.png",
-		    "https://files.catbox.moe/f98a9f.png",
-		    "https://files.catbox.moe/p61aq2.png",
-  		  "https://files.catbox.moe/9qkaov.png",
- 		   "https://files.catbox.moe/8tvtjm.png",
-		    "https://files.catbox.moe/hd9105.png",
-		    "https://files.catbox.moe/jycqms.png",
-		    "https://files.catbox.moe/gtqmw9.png",
- 		   "https://files.catbox.moe/v79vcg.png",
-  		  "https://files.catbox.moe/kl5xbq.png",
-		    "https://files.catbox.moe/6vr4vw.png"
-		]
+        selected_image = random.choice(WELCOME_IMAGES)
 
-        selected_image = random.choice(image_urls)
-
-        # Send the welcome image with caption
         await message.answer_photo(
             photo=selected_image,
             caption=welcome_text,
@@ -881,106 +907,83 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
-    """Handle /help command"""
     try:
         user_name = message.from_user.first_name or "User"
         user_mention = f'<a href="tg://user?id={message.from_user.id}">{user_name}</a>'
         
-        help_text = (
-            f"📚 <b>Complete Guide</b>\n"
-            f"<i>Hello {user_mention}! Here's everything:</i>\n\n"
-            
-            "🎯 <b>COMMANDS</b>\n\n"
-            
-            "🎲 <b><code>/random</code></b>\n"
-            "├─ Get instant random content\n"
-            "└─ Perfect for discovery\n\n"
-            
-            "🔢 <b><code>/id &lt;number&gt;</code></b>\n"
-            "├─ Direct access by ID\n"
-            "└─ Example: <code>/id 123456</code>\n\n"
-            
-            "🔍 <b><code>/search &lt;keywords&gt;</code></b>\n"
-            "├─ Find specific content\n"
-            "├─ <code>/search vanilla</code>\n"
-            "├─ <code>/search english</code>\n"
-            "└─ <code>/search artist:name</code>\n\n"
-            
-            "🎮 <b>NAVIGATION</b>\n\n"
-            
-            "📖 <b>Reading Mode:</b>\n"
-            "├─ Click <code>📖</code> to start\n"
-            "├─ ⬅️➡️ Previous/Next page\n"
-            "├─ ⬅️10 / 10➡️ Jump 10 pages\n"
-            "└─ ⏪⏩ First/Last page\n\n"
-            
-            "📚 <b>Chapter Navigation:</b>\n"
-            "├─ Same controls for chapters\n"
-            "└─ Seamless reading\n\n"
-            
-            "🔍 <b>Search Results:</b>\n"
-            "├─ Browse unlimited results\n"
-            "└─ Intuitive button controls\n\n"
-            
-            "💡 <b>PRO TIPS</b>\n\n"
-            
-            "🎯 <b>Search Better:</b>\n"
-            "├─ Use specific tags\n"
-            "├─ Combine keywords\n"
-            "├─ Try: english, japanese\n"
-            "└─ Try: vanilla, romance\n\n"
-            
-            "🚀 <b>Navigate Faster:</b>\n"
-            "├─ Bookmark interesting IDs\n"
-            "├─ Use 10-page jumps\n"
-            "└─ Touch-friendly buttons\n\n"
-            
-            "✨ <b>Ready to explore?</b>\n"
-            "<i>Try any command above!</i>"
-        )
-        await send_message(message, help_text)
+        # Inline button with expand/minimize
+        help_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📖 Expand Guide", callback_data="help_expand")]
+        ])
+        
+        help_text = MESSAGES['help_short'].format(user_mention=user_mention)
+        await send_message(message, help_text, reply_markup=help_keyboard)
     except Exception as e:
         logger.error(f"Error in help command: {e}")
         await send_message(message, "❌ An error occurred. Please try again.")
 
+@dp.callback_query(F.data == "help_expand")
+async def help_expand(callback: CallbackQuery):
+    try:
+        user_name = callback.from_user.first_name or "User"
+        user_mention = f'<a href="tg://user?id={callback.from_user.id}">{user_name}</a>'
+        
+        help_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📚 Minimize Guide", callback_data="help_minimize")]
+        ])
+        
+        help_text = MESSAGES['help_full'].format(user_mention=user_mention)
+        await callback.message.edit_text(help_text, reply_markup=help_keyboard)
+        await callback.answer("Expanded guide")
+    except Exception as e:
+        logger.error(f"Error in help expand: {e}")
+        await callback.answer("❌ Error expanding guide")
+
+@dp.callback_query(F.data == "help_minimize")
+async def help_minimize(callback: CallbackQuery):
+    try:
+        user_name = callback.from_user.first_name or "User"
+        user_mention = f'<a href="tg://user?id={callback.from_user.id}">{user_name}</a>'
+        
+        help_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📖 Expand Guide", callback_data="help_expand")]
+        ])
+        
+        help_text = MESSAGES['help_short'].format(user_mention=user_mention)
+        await callback.message.edit_text(help_text, reply_markup=help_keyboard)
+        await callback.answer("Minimized guide")
+    except Exception as e:
+        logger.error(f"Error in help minimize: {e}")
+        await callback.answer("❌ Error minimizing guide")
+
 @dp.message(Command("random"))
 async def cmd_random(message: types.Message):
-    """Handle /random command"""
     user_id = message.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
         
-        status_msg = await send_message(message, "🎲 Finding a random doujin...")
+        status_msg = await send_message(message, MESSAGES['random_search'])
         
         doujin_id = await get_random_doujin_id()
         if doujin_id:
             await status_msg.delete()
             success = await send_doujin_info(message.chat.id, doujin_id, reply_to_message=message)
             if not success:
-                await send_message(message,
-                    "🎲 <b>Let's try another roll!</b>\n\n<i>That one didn't work out, but there are thousands more waiting to be discovered!</i>"
-                )
+                await send_message(message, MESSAGES['random_retry'])
         else:
-            await status_msg.edit_text(
-                "🌟 <b>The magic didn't work this time...</b>\n\n<i>Let's give it another try! Sometimes the best discoveries take a moment to find.</i>"
-            )
+            await status_msg.edit_text(MESSAGES['magic_failed'])
     except Exception as e:
         logger.error(f"Error in random command: {e}")
         await send_message(message, "❌ An error occurred. Please try again.")
 
 @dp.message(Command("id"))
 async def cmd_id(message: types.Message, command: CommandObject):
-    """Handle /id command"""
     user_id = message.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
         
         if not command.args:
-            await send_message(message, 
-                "🔢 <b>Need an ID to get started!</b>\n\n"
-                "💡 <i>Just add the number after the command:</i>\n"
-                "<code>/id 123456</code>"
-            )
+            await send_message(message, MESSAGES['id_prompt'])
             return
         
         doujin_id = command.args.strip()
@@ -988,7 +991,7 @@ async def cmd_id(message: types.Message, command: CommandObject):
             await send_message(message, "❌ Please provide a valid numeric ID.\nExample: <code>/id 123456</code>")
             return
         
-        status_msg = await send_message(message, f"🔍 Fetching doujin {doujin_id}...")
+        status_msg = await send_message(message, MESSAGES['id_fetch'].format(doujin_id=doujin_id))
         
         success = await send_doujin_info(message.chat.id, doujin_id, reply_to_message=message)
         await status_msg.delete()
@@ -1001,19 +1004,12 @@ async def cmd_id(message: types.Message, command: CommandObject):
 
 @dp.message(Command("search"))
 async def cmd_search(message: types.Message, command: CommandObject):
-    """Handle /search command"""
     user_id = message.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
         
         if not command.args:
-            await send_message(message,
-                "🔍 <b>What would you like to find?</b>\n\n"
-                "💡 <i>Just tell me what you're looking for:</i>\n"
-                "├─ <code>/search vanilla</code>\n"
-                "├─ <code>/search romance</code>\n"
-                "└─ <code>/search english</code>"
-            )
+            await send_message(message, MESSAGES['search_prompt'])
             return
         
         query = command.args.strip()
@@ -1021,14 +1017,13 @@ async def cmd_search(message: types.Message, command: CommandObject):
             await send_message(message, "❌ Search query must be at least 2 characters long.")
             return
         
-        status_msg = await send_message(message, f"🔍 Searching for: <b>{query}</b>...")
+        status_msg = await send_message(message, MESSAGES['search_working'].format(query=query))
         
         doujin_ids = await search_nhentai(query)
         if not doujin_ids:
-            await status_msg.edit_text(f"❌ No results found for: <b>{query}</b>")
+            await status_msg.edit_text(MESSAGES['no_results'].format(query=query))
             return
         
-        # Store search results in session
         session = get_user_session(user_id)
         session['current_search'] = query
         session['search_results'] = doujin_ids
@@ -1036,8 +1031,7 @@ async def cmd_search(message: types.Message, command: CommandObject):
         
         await status_msg.delete()
         
-        # Send first result - each result is now one page (no grouping)
-        total_pages = len(doujin_ids)  # Each doujin is one page
+        total_pages = len(doujin_ids)
         first_doujin_id = doujin_ids[0]
         
         await send_doujin_info(
@@ -1056,7 +1050,6 @@ async def cmd_search(message: types.Message, command: CommandObject):
 
 @dp.message(F.text & ~F.text.startswith("/") & F.chat.type == "private")
 async def handle_text_search(message: types.Message):
-    """Handle plain text messages as search queries (private chats only)"""
     user_id = message.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
@@ -1066,24 +1059,17 @@ async def handle_text_search(message: types.Message):
             await send_message(message, "❌ Search query must be at least 2 characters long.")
             return
         
-        # Ignore very short common words or single characters
         if len(query) == 1 or query.lower() in ['hi', 'hey', 'ok', 'yes', 'no']:
-            await send_message(message,
-                "💡 To search, use longer terms like:\n"
-                "<code>hinata hyuga</code>\n"
-                "<code>english vanilla</code>\n"
-                "Or use /help for all commands."
-            )
+            await send_message(message, MESSAGES['search_tip'])
             return
         
-        status_msg = await send_message(message, f"🔍 Searching for: <b>{query}</b>...")
+        status_msg = await send_message(message, MESSAGES['search_working'].format(query=query))
         
         doujin_ids = await search_nhentai(query)
         if not doujin_ids:
-            await status_msg.edit_text(f"❌ No results found for: <b>{query}</b>")
+            await status_msg.edit_text(MESSAGES['no_results'].format(query=query))
             return
         
-        # Store search results in session
         session = get_user_session(user_id)
         session['current_search'] = query
         session['search_results'] = doujin_ids
@@ -1091,7 +1077,6 @@ async def handle_text_search(message: types.Message):
         
         await status_msg.delete()
         
-        # Send first result
         total_pages = len(doujin_ids)
         first_doujin_id = doujin_ids[0]
         
@@ -1112,7 +1097,6 @@ async def handle_text_search(message: types.Message):
 # Callback handlers
 @dp.callback_query(F.data.startswith("nav:"))
 async def handle_navigation(callback: CallbackQuery):
-    """Handle navigation callbacks"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
@@ -1154,40 +1138,32 @@ async def handle_navigation(callback: CallbackQuery):
             await callback.answer("Already at the boundary")
             return
         
-        # Update session
         session['current_page'] = new_page
         
-        # Get doujin for new page
         doujin_id = search_results[new_page]
-        total_pages = len(search_results)  # Each doujin is one page
+        total_pages = len(search_results)
         
-        # Get doujin data
         data = await get_doujin_by_id(doujin_id)
         if not data:
             await callback.answer("❌ Failed to load doujin")
             return
         
-        # Format new content
         caption = format_doujin_info(data)
         markup = create_doujin_markup(doujin_id, True, new_page, total_pages, search_query)
         
-        # Try to edit with new image
         cover_url = get_cover_image_url(data)
         try:
             if cover_url and callback.message.photo:
-                # Edit with new photo
                 await callback.message.edit_media(
                     InputMediaPhoto(media=cover_url, caption=caption),
                     reply_markup=markup
                 )
             elif cover_url and not callback.message.photo:
-                # Edit to photo message
                 await callback.message.edit_media(
                     InputMediaPhoto(media=cover_url, caption=caption),
                     reply_markup=markup
                 )
             else:
-                # Edit text only
                 await callback.message.edit_text(
                     text=caption,
                     reply_markup=markup
@@ -1208,7 +1184,6 @@ async def handle_navigation(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("read:"))
 async def handle_read(callback: CallbackQuery):
-    """Handle read callbacks"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
@@ -1217,7 +1192,6 @@ async def handle_read(callback: CallbackQuery):
         doujin_id = data_parts[1]
         page_num = int(data_parts[2]) if len(data_parts) > 2 else 1
         
-        # Get doujin data
         data = await get_doujin_by_id(doujin_id)
         if not data:
             await callback.answer("❌ Failed to load doujin")
@@ -1227,22 +1201,18 @@ async def handle_read(callback: CallbackQuery):
         if page_num < 1 or page_num > total_pages:
             page_num = 1
         
-        # Get page image URL
         page_url = get_page_image_url(data, page_num)
         if not page_url:
             await callback.answer("❌ Failed to get page image")
             return
         
-        # Get user session to check for search context
         session = get_user_session(user_id)
         search_results = session.get('search_results', [])
         search_index = -1
         
-        # Find current doujin index in search results
         if search_results and doujin_id in search_results:
             search_index = search_results.index(doujin_id)
         
-        # Create navigation markup for page reading
         markup = create_doujin_markup(
             doujin_id=doujin_id,
             page_mode=True,
@@ -1252,7 +1222,6 @@ async def handle_read(callback: CallbackQuery):
             search_index=search_index
         )
         
-        # Caption with page info
         title = data.get("title", {}).get("english") or data.get("title", {}).get("pretty") or f"Doujin {doujin_id}"
         if len(title) > 50:
             title = title[:47] + "..."
@@ -1260,7 +1229,6 @@ async def handle_read(callback: CallbackQuery):
         caption = f"<b>{title}</b>\nPage {page_num}/{total_pages}"
         
         try:
-            # Edit message with new page image
             await callback.message.edit_media(
                 InputMediaPhoto(media=page_url, caption=caption),
                 reply_markup=markup
@@ -1283,7 +1251,6 @@ async def handle_read(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("page:"))
 async def handle_page_navigation(callback: CallbackQuery):
-    """Handle page navigation within doujin"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
@@ -1293,7 +1260,6 @@ async def handle_page_navigation(callback: CallbackQuery):
         doujin_id = data_parts[2]
         current_page = int(data_parts[3])
         
-        # Get doujin data
         data = await get_doujin_by_id(doujin_id)
         if not data:
             await callback.answer("❌ Failed to load doujin")
@@ -1301,7 +1267,6 @@ async def handle_page_navigation(callback: CallbackQuery):
         
         total_pages = data.get("num_pages", 1)
         
-        # Calculate new page based on action
         if action == "prev":
             new_page = max(1, current_page - 1)
         elif action == "next":
@@ -1322,13 +1287,11 @@ async def handle_page_navigation(callback: CallbackQuery):
             await callback.answer("Already at the boundary")
             return
         
-        # Get new page image
         page_url = get_page_image_url(data, new_page)
         if not page_url:
             await callback.answer("❌ Failed to get page image")
             return
         
-        # Get user session for search context
         session = get_user_session(user_id)
         search_results = session.get('search_results', [])
         search_index = -1
@@ -1336,7 +1299,6 @@ async def handle_page_navigation(callback: CallbackQuery):
         if search_results and doujin_id in search_results:
             search_index = search_results.index(doujin_id)
         
-        # Create updated markup
         markup = create_doujin_markup(
             doujin_id=doujin_id,
             page_mode=True,
@@ -1346,7 +1308,6 @@ async def handle_page_navigation(callback: CallbackQuery):
             search_index=search_index
         )
         
-        # Updated caption
         title = data.get("title", {}).get("english") or data.get("title", {}).get("pretty") or f"Doujin {doujin_id}"
         if len(title) > 50:
             title = title[:47] + "..."
@@ -1354,7 +1315,6 @@ async def handle_page_navigation(callback: CallbackQuery):
         caption = f"<b>{title}</b>\nPage {new_page}/{total_pages}"
         
         try:
-            # Edit the image
             await callback.message.edit_media(
                 InputMediaPhoto(media=page_url, caption=caption),
                 reply_markup=markup
@@ -1374,7 +1334,6 @@ async def handle_page_navigation(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("next_chapter:"))
 async def handle_chapter_navigation(callback: CallbackQuery):
-    """Handle chapter navigation within search results"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
@@ -1383,7 +1342,6 @@ async def handle_chapter_navigation(callback: CallbackQuery):
         doujin_id = data_parts[1]
         chapter_index = int(data_parts[2])
         
-        # Get user session
         session = get_user_session(user_id)
         search_results = session.get('search_results', [])
         
@@ -1391,11 +1349,9 @@ async def handle_chapter_navigation(callback: CallbackQuery):
             await callback.answer("❌ Invalid chapter")
             return
         
-        # Update session
         session['current_page'] = chapter_index
         session['reading_chapter_index'] = chapter_index
         
-        # Get new doujin data
         data = await get_doujin_by_id(doujin_id)
         if not data:
             await callback.answer("❌ Failed to load chapter")
@@ -1403,13 +1359,11 @@ async def handle_chapter_navigation(callback: CallbackQuery):
         
         total_pages = data.get("num_pages", 1)
         
-        # Get first page of new chapter
         page_url = get_page_image_url(data, 1)
         if not page_url:
             await callback.answer("❌ Failed to get chapter image")
             return
         
-        # Create markup for new chapter
         markup = create_doujin_markup(
             doujin_id=doujin_id,
             page_mode=True,
@@ -1419,7 +1373,6 @@ async def handle_chapter_navigation(callback: CallbackQuery):
             search_index=chapter_index
         )
         
-        # Updated caption
         title = data.get("title", {}).get("english") or data.get("title", {}).get("pretty") or f"Doujin {doujin_id}"
         if len(title) > 50:
             title = title[:47] + "..."
@@ -1427,7 +1380,6 @@ async def handle_chapter_navigation(callback: CallbackQuery):
         caption = f"<b>{title}</b>\nPage 1/{total_pages}\nChapter {chapter_index + 1}/{len(search_results)}"
         
         try:
-            # Edit to new chapter
             await callback.message.edit_media(
                 InputMediaPhoto(media=page_url, caption=caption),
                 reply_markup=markup
@@ -1447,15 +1399,12 @@ async def handle_chapter_navigation(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("back_to_search:"))
 async def handle_back_to_search(callback: CallbackQuery):
-    """Handle back to search button"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
         
-        # Extract search query from callback data
         search_query = callback.data.split(":", 1)[1]
         
-        # Get user session
         session = get_user_session(user_id)
         search_results = session.get('search_results', [])
         current_page = session.get('current_page', 0)
@@ -1464,7 +1413,6 @@ async def handle_back_to_search(callback: CallbackQuery):
             await callback.answer("❌ No search results available")
             return
         
-        # Edit current message with search result
         doujin_id = search_results[current_page]
         total_pages = len(search_results)
         
@@ -1488,12 +1436,10 @@ async def handle_back_to_search(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "back_to_search_page")
 async def handle_back_to_search_page(callback: CallbackQuery):
-    """Handle back to search button from page mode"""
     user_id = callback.from_user.id
     try:
         await rate_limiter.wait_if_needed(user_id)
         
-        # Get user session
         session = get_user_session(user_id)
         search_results = session.get('search_results', [])
         current_page = session.get('current_page', 0)
@@ -1503,7 +1449,6 @@ async def handle_back_to_search_page(callback: CallbackQuery):
             await callback.answer("❌ No search results available")
             return
         
-        # Edit current message with search result
         doujin_id = search_results[current_page]
         total_pages = len(search_results)
         
@@ -1525,7 +1470,7 @@ async def handle_back_to_search_page(callback: CallbackQuery):
         logger.error(f"Error in back to search page: {e}")
         await callback.answer("❌ Error returning to search")
 
- # ─── Dummy HTTP Server to Keep Render Happy ─────────────────────────────────
+# Dummy HTTP server
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -1537,18 +1482,16 @@ class DummyHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 def start_dummy_server():
-    port = int(os.environ.get("PORT", 10000))  # Render injects this
+    port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), DummyHandler)
     print(f"Dummy server listening on port {port}")
     server.serve_forever()
 
 # Main function
 async def main():
-    """Main function to start the bot"""
     try:
         logger.info("Starting bot...")
         
-        # Set bot commands for the menu
         from aiogram.types import BotCommand
         commands = [
             BotCommand(command="start", description="🌸 Welcome Home"),
@@ -1567,7 +1510,5 @@ async def main():
         await bot.session.close()
 
 if __name__ == "__main__":
-    # Start dummy HTTP server (needed for Render health check)
     threading.Thread(target=start_dummy_server, daemon=True).start()
-    
     asyncio.run(main())
